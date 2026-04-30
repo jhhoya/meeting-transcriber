@@ -62,10 +62,7 @@
   <h1>🎙️ 음성 회의록 변환기</h1>
   <p class="sub">Whisper STT + Claude로 회의록 자동 생성</p>
 
-  <div class="card">
-    <div class="label">OpenAI API 키</div>
-    <input type="password" id="apiKey" placeholder="sk-proj-..." />
-  </div>
+
 
   <div class="card">
     <div class="label">음성 파일 업로드</div>
@@ -154,9 +151,7 @@ function copyResult() {
 }
 
 async function runPipeline() {
-  const apiKey = document.getElementById('apiKey').value.trim();
   const prompt = document.getElementById('customPrompt').value.trim();
-  if (!apiKey) { setStatus('OpenAI API 키를 입력해주세요.', 'error'); return; }
   if (!selectedFile) { setStatus('음성 파일을 선택해주세요.', 'error'); return; }
 
   document.getElementById('runBtn').disabled = true;
@@ -164,7 +159,7 @@ async function runPipeline() {
     setStatus('1단계: Whisper로 음성 변환 중...', 'loading');
     const formData = new FormData();
     formData.append('file', selectedFile);
-    const wr = await fetch('/transcribe', { method: 'POST', headers: { 'x-openai-key': apiKey }, body: formData });
+    const wr = await fetch('/transcribe', { method: 'POST', body: formData });
     if (!wr.ok) { const e = await wr.json().catch(()=>({})); throw new Error(e.error || 'Whisper 변환 실패'); }
     const wd = await wr.json();
     transcriptText = wd.transcript;

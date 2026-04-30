@@ -17,7 +17,7 @@ app.get('/', (req, res) => {
 
 app.post('/transcribe', upload.single('file'), async (req, res) => {
   try {
-    const apiKey = req.headers['x-openai-key'];
+    const apiKey = process.env.OPENAI_API_KEY || req.headers['x-openai-key'];
     if (!apiKey) return res.status(400).json({ error: 'API 키 없음' });
 
     const form = new FormData();
