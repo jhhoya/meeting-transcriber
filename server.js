@@ -5,6 +5,9 @@ const axios = require('axios');
 const FormData = require('form-data');
 const path = require('path');
 
+console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '있음' : '없음');
+console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? '있음' : '없음');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -17,7 +20,7 @@ app.get('/', (req, res) => {
 
 app.post('/transcribe', upload.single('file'), async (req, res) => {
   try {
-    const apiKey = process.env.OPENAI_API_KEY || req.headers['x-openai-key'];
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(400).json({ error: 'API 키 없음' });
 
     const form = new FormData();
@@ -50,6 +53,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 app.post('/minutes', async (req, res) => {
   try {
     const { transcript, prompt } = req.body;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
@@ -61,6 +65,7 @@ app.post('/minutes', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
           'anthropic-version': '2023-06-01'
         }
       }
