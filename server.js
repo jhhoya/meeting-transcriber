@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
 app.post('/transcribe', upload.single('file'), async (req, res) => {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(400).json({ error: 'API 키 없음' });
+    if (!apiKey) return res.status(400).json({ error: 'OpenAI API 키 없음' });
 
     const form = new FormData();
     form.append('file', req.file.buffer, {
@@ -52,27 +52,52 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 
 app.post('/minutes', async (req, res) => {
   try {
-    const { transcript, prompt } = req.body;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const { transcript, prompt, model } = req.body;
 
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt + '\n\n---\n음성 변환 원문:\n' + transcript }]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01'
+    let minutes = '';
+
+    if (model === 'anthropic') {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY;
+      if (!anthropicKey) return res.status(400).json({ error: 'Anthropic API 키 없음' });
+
+      const response = await axios.post(
+        'https://api.anthropic.com/v1/messages',
+        {
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          messages: [{ role: 'user', content: prompt + '\n\n---\n음성 변환 원문:\n' + transcript }]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01'
+          }
         }
-      }
-    );
+      );
+      minutes = response.data.content?.find(b => b.type === 'text')?.text || '';
 
-    const text = response.data.content?.find(b => b.type === 'text')?.text || '';
-    res.json({ minutes: text });
+    } else {
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!openaiKey) return res.status(400).json({ error: 'OpenAI API 키 없음' });
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt + '\n\n---\n음성 변환 원문:\n' + transcript }]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${openaiKey}`
+          }
+        }
+      );
+      minutes = response.data.choices?.[0]?.message?.content || '';
+    }
+
+    res.json({ minutes });
   } catch (e) {
     const msg = e.response?.data?.error?.message || e.message;
     res.status(500).json({ error: msg });
