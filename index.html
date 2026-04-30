@@ -14,6 +14,11 @@
   .label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
   textarea { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fafafa; color: #111; min-height: 90px; resize: vertical; line-height: 1.6; }
   textarea:focus { outline: none; border-color: #999; background: #fff; }
+  select { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fafafa; color: #111; cursor: pointer; }
+  select:focus { outline: none; border-color: #999; }
+  .provider-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .provider-tab { flex: 1; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; background: none; cursor: pointer; font-family: inherit; font-size: 13px; color: #888; font-weight: 500; }
+  .provider-tab.active { border-color: #111; color: #111; background: #f5f5f5; }
   .drop-zone { border: 2px dashed #ddd; border-radius: 10px; padding: 2.5rem 1rem; text-align: center; cursor: pointer; transition: background 0.15s; }
   .drop-zone:hover, .drop-zone.over { background: #f0f0f0; }
   .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
@@ -24,15 +29,13 @@
   .file-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-size { font-size: 12px; color: #888; white-space: nowrap; }
   .remove-btn { background: none; border: none; cursor: pointer; color: #aaa; font-size: 16px; }
-  .model-select { display: flex; gap: 8px; }
-  .model-btn { flex: 1; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; background: none; cursor: pointer; font-family: inherit; font-size: 13px; color: #555; transition: all 0.1s; text-align: center; }
-  .model-btn.active { border-color: #111; color: #111; font-weight: 600; background: #f5f5f5; }
-  .model-btn .model-name { font-size: 13px; font-weight: 600; display: block; margin-bottom: 2px; }
-  .model-btn .model-desc { font-size: 11px; color: #999; }
-  .model-btn.active .model-desc { color: #666; }
-  .run-btn { width: 100%; padding: 13px; border: none; border-radius: 10px; background: #111; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; font-family: inherit; }
+  .btn-row { display: flex; gap: 8px; }
+  .run-btn { flex: 1; padding: 13px; border: none; border-radius: 10px; background: #111; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; font-family: inherit; }
   .run-btn:hover { opacity: 0.85; }
   .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .dl-btn { padding: 13px 18px; border: 1.5px solid #ddd; border-radius: 10px; background: none; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; color: #555; display: none; }
+  .dl-btn.show { display: block; }
+  .dl-btn:hover { background: #f5f5f5; }
   .status { display: none; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
   .status.show { display: flex; }
   .status.loading { background: #eff6ff; color: #1d4ed8; }
@@ -57,17 +60,12 @@
   <p class="sub">Whisper STT + AI로 회의록 자동 생성</p>
 
   <div class="card">
-    <div class="label">회의록 작성 AI 모델</div>
-    <div class="model-select">
-      <button class="model-btn active" id="btn-openai" onclick="selectModel('openai')">
-        <span class="model-name">GPT-4o mini</span>
-        <span class="model-desc">OpenAI · 빠르고 저렴</span>
-      </button>
-      <button class="model-btn" id="btn-anthropic" onclick="selectModel('anthropic')">
-        <span class="model-name">Claude Sonnet</span>
-        <span class="model-desc">Anthropic · 고품질</span>
-      </button>
+    <div class="label">AI 모델 선택</div>
+    <div class="provider-tabs">
+      <button class="provider-tab active" onclick="switchProvider('openai')">OpenAI</button>
+      <button class="provider-tab" onclick="switchProvider('anthropic')">Anthropic (Claude)</button>
     </div>
+    <select id="modelSelect"></select>
   </div>
 
   <div class="card">
@@ -95,7 +93,10 @@
 4. 액션 아이템 (담당자 및 기한 포함, 언급된 경우)</textarea>
   </div>
 
-  <button class="run-btn" id="runBtn" onclick="runPipeline()">변환 시작</button>
+  <div class="btn-row">
+    <button class="run-btn" id="runBtn" onclick="runPipeline()">변환 시작</button>
+    <button class="dl-btn" id="dlBtn" onclick="downloadDocx()">📄 DOCX</button>
+  </div>
 
   <div class="status" id="statusBar">
     <div class="spinner"></div>
@@ -115,14 +116,33 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
 <script>
-let selectedFile = null, transcriptText = '', minutesText = '', currentTab = 'minutes', selectedModel = 'openai';
+const MODELS = {
+  openai: [
+    { value: 'gpt-4o-mini', label: 'GPT-4o mini · 빠르고 저렴' },
+    { value: 'gpt-4o', label: 'GPT-4o · 고성능' },
+    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo · 구형 고성능' },
+    { value: 'o4-mini', label: 'o4-mini · 추론 모델' },
+  ],
+  anthropic: [
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku · 빠르고 저렴' },
+    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet · 균형' },
+    { value: 'claude-opus-4-5', label: 'Claude Opus · 최고 성능' },
+  ]
+};
 
-function selectModel(model) {
-  selectedModel = model;
-  document.getElementById('btn-openai').classList.toggle('active', model === 'openai');
-  document.getElementById('btn-anthropic').classList.toggle('active', model === 'anthropic');
+let selectedFile = null, transcriptText = '', minutesText = '', currentTab = 'minutes', currentProvider = 'openai';
+
+function switchProvider(provider) {
+  currentProvider = provider;
+  document.querySelectorAll('.provider-tab').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0 && provider === 'openai') || (i === 1 && provider === 'anthropic'));
+  });
+  const sel = document.getElementById('modelSelect');
+  sel.innerHTML = MODELS[provider].map(m => `<option value="${m.value}">${m.label}</option>`).join('');
 }
+switchProvider('openai');
 
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -154,27 +174,51 @@ function copyResult() {
   });
 }
 
+async function downloadDocx() {
+  const text = currentTab === 'minutes' ? minutesText : transcriptText;
+  if (!text) return;
+
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+  const lines = text.split('\n');
+  const children = lines.map(line => {
+    if (line.match(/^[0-9]+\./)) {
+      return new Paragraph({ text: line, heading: HeadingLevel.HEADING_2 });
+    }
+    return new Paragraph({ children: [new TextRun({ text: line, size: 24 })] });
+  });
+
+  const doc = new Document({ sections: [{ children }] });
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = currentTab === 'minutes' ? '회의록.docx' : '원문텍스트.docx';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function runPipeline() {
   const prompt = document.getElementById('customPrompt').value.trim();
+  const model = document.getElementById('modelSelect').value;
   if (!selectedFile) { setStatus('음성 파일을 선택해주세요.', 'error'); return; }
   document.getElementById('runBtn').disabled = true;
+  document.getElementById('dlBtn').classList.remove('show');
   try {
     setStatus('1단계: Whisper로 음성 변환 중...', 'loading');
     const formData = new FormData();
     formData.append('file', selectedFile);
     const wr = await fetch('/transcribe', { method: 'POST', body: formData });
     if (!wr.ok) { const e = await wr.json().catch(()=>({})); throw new Error(e.error || 'Whisper 변환 실패'); }
-    const wd = await wr.json();
-    transcriptText = wd.transcript;
+    transcriptText = (await wr.json()).transcript;
 
-    setStatus(`2단계: ${selectedModel === 'openai' ? 'GPT-4o mini' : 'Claude Sonnet'}로 회의록 작성 중...`, 'loading');
-    const mr = await fetch('/minutes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: transcriptText, prompt, model: selectedModel }) });
+    setStatus(`2단계: ${model} 로 회의록 작성 중...`, 'loading');
+    const mr = await fetch('/minutes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: transcriptText, prompt, model }) });
     if (!mr.ok) { const e = await mr.json().catch(()=>({})); throw new Error(e.error || '회의록 생성 실패'); }
-    const md = await mr.json();
-    minutesText = md.minutes;
+    minutesText = (await mr.json()).minutes;
 
     hideStatus();
     document.getElementById('resultCard').classList.add('show');
+    document.getElementById('dlBtn').classList.add('show');
     currentTab = 'minutes';
     document.getElementById('tab-minutes').classList.add('active');
     document.getElementById('tab-transcript').classList.remove('active');
