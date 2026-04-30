@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>음성 회의록 변환기</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #f5f5f5; color: #111; min-height: 100vh; display: flex; justify-content: center; padding: 2rem 1rem; }
+  .container { width: 100%; max-width: 640px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+  .card { background: #fff; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid #e5e5e5; }
+  .label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  input[type="password"], input[type="text"], textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 13px; font-family: inherit; background: #fafafa; color: #111;
+  }
+  input:focus, textarea:focus { outline: none; border-color: #999; background: #fff; }
+  .drop-zone {
+    border: 2px dashed #ddd; border-radius: 10px; padding: 2.5rem 1rem;
+    text-align: center; cursor: pointer; transition: background 0.15s;
+  }
+  .drop-zone:hover, .drop-zone.over { background: #f0f0f0; }
+  .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
+  .drop-label { font-size: 14px; color: #555; margin-bottom: 4px; }
+  .drop-sub { font-size: 12px; color: #aaa; }
+  .file-info { display: none; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 12px; background: #f5f5f5; border-radius: 8px; }
+  .file-info.show { display: flex; }
+  .file-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { font-size: 12px; color: #888; white-space: nowrap; }
+  .remove-btn { background: none; border: none; cursor: pointer; color: #aaa; font-size: 16px; }
+  .remove-btn:hover { color: #e00; }
+  textarea { min-height: 90px; resize: vertical; line-height: 1.6; font-size: 13px; }
+  .run-btn {
+    width: 100%; padding: 13px; border: none; border-radius: 10px;
+    background: #111; color: #fff; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s; font-family: inherit;
+  }
+  .run-btn:hover { opacity: 0.85; }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status { display: none; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+  .status.show { display: flex; }
+  .status.loading { background: #eff6ff; color: #1d4ed8; }
+  .status.error { background: #fef2f2; color: #dc2626; }
+  .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result { display: none; margin-top: 1rem; }
+  .result.show { display: block; }
+  .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .result-title { font-size: 14px; font-weight: 600; }
+  .copy-btn { font-size: 12px; padding: 5px 12px; border: 1px solid #ddd; background: none; border-radius: 6px; cursor: pointer; }
+  .copy-btn:hover { background: #f5f5f5; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tab { font-size: 12px; padding: 5px 12px; border: 1px solid #ddd; background: none; border-radius: 6px; cursor: pointer; color: #888; font-family: inherit; }
+  .tab.active { border-color: #111; color: #111; font-weight: 600; background: #f5f5f5; }
+  .result-content { white-space: pre-wrap; font-size: 13px; line-height: 1.8; background: #fafafa; border-radius: 8px; padding: 1rem 1.25rem; max-height: 480px; overflow-y: auto; border: 1px solid #e5e5e5; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎙️ 음성 회의록 변환기</h1>
+  <p class="sub">Whisper STT + Claude로 회의록 자동 생성</p>
+
+  <div class="card">
+    <div class="label">OpenAI API 키</div>
+    <input type="password" id="apiKey" placeholder="sk-proj-..." />
+  </div>
+
+  <div class="card">
+    <div class="label">음성 파일 업로드</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📁</div>
+      <div class="drop-label">클릭하거나 파일을 드래그하세요</div>
+      <div class="drop-sub">mp3, mp4, wav, m4a, webm 지원 · 최대 25MB</div>
+    </div>
+    <input type="file" id="fileInput" accept=".mp3,.mp4,.wav,.m4a,.webm,.ogg,.flac" style="display:none">
+    <div class="file-info" id="fileInfo">
+      <span class="file-name" id="fileName"></span>
+      <span class="file-size" id="fileSize"></span>
+      <button class="remove-btn" onclick="removeFile()">✕</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">회의록 작성 지침 (선택)</div>
+    <textarea id="customPrompt">다음 회의 내용을 한국어 회의록으로 작성해줘. 다음 형식을 따라줘:
+
+1. 회의 개요 (일자, 주제 요약)
+2. 주요 논의 내용 (항목별 정리)
+3. 결정 사항
+4. 액션 아이템 (담당자 및 기한 포함, 언급된 경우)</textarea>
+  </div>
+
+  <button class="run-btn" id="runBtn" onclick="runPipeline()">변환 시작</button>
+
+  <div class="status" id="statusBar">
+    <div class="spinner"></div>
+    <span id="statusText"></span>
+  </div>
+
+  <div class="result card" id="resultCard">
+    <div class="result-header">
+      <div class="result-title">결과</div>
+      <button class="copy-btn" onclick="copyResult()">복사</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" id="tab-minutes" onclick="switchTab('minutes')">회의록</button>
+      <button class="tab" id="tab-transcript" onclick="switchTab('transcript')">원문 텍스트</button>
+    </div>
+    <div class="result-content" id="resultContent"></div>
+  </div>
+</div>
+
+<script>
+let selectedFile = null, transcriptText = '', minutesText = '', currentTab = 'minutes';
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('fileName').textContent = f.name;
+  document.getElementById('fileSize').textContent = (f.size/1024/1024).toFixed(1) + ' MB';
+  document.getElementById('fileInfo').classList.add('show');
+}
+function removeFile() {
+  selectedFile = null; fileInput.value = '';
+  document.getElementById('fileInfo').classList.remove('show');
+}
+function setStatus(msg, type) {
+  const bar = document.getElementById('statusBar');
+  bar.className = 'status show ' + type;
+  document.getElementById('statusText').textContent = msg;
+}
+function hideStatus() { document.getElementById('statusBar').className = 'status'; }
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-minutes').classList.toggle('active', tab === 'minutes');
+  document.getElementById('tab-transcript').classList.toggle('active', tab === 'transcript');
+  document.getElementById('resultContent').textContent = tab === 'minutes' ? minutesText : transcriptText;
+}
+function copyResult() {
+  navigator.clipboard.writeText(currentTab === 'minutes' ? minutesText : transcriptText).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = '복사됨!';
+    setTimeout(() => btn.textContent = '복사', 1500);
+  });
+}
+
+async function runPipeline() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const prompt = document.getElementById('customPrompt').value.trim();
+  if (!apiKey) { setStatus('OpenAI API 키를 입력해주세요.', 'error'); return; }
+  if (!selectedFile) { setStatus('음성 파일을 선택해주세요.', 'error'); return; }
+
+  document.getElementById('runBtn').disabled = true;
+  try {
+    setStatus('1단계: Whisper로 음성 변환 중...', 'loading');
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    const wr = await fetch('/transcribe', { method: 'POST', headers: { 'x-openai-key': apiKey }, body: formData });
+    if (!wr.ok) { const e = await wr.json().catch(()=>({})); throw new Error(e.error || 'Whisper 변환 실패'); }
+    const wd = await wr.json();
+    transcriptText = wd.transcript;
+
+    setStatus('2단계: Claude로 회의록 작성 중...', 'loading');
+    const mr = await fetch('/minutes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcript: transcriptText, prompt }) });
+    if (!mr.ok) { const e = await mr.json().catch(()=>({})); throw new Error(e.error || 'Claude 회의록 생성 실패'); }
+    const md = await mr.json();
+    minutesText = md.minutes;
+
+    hideStatus();
+    document.getElementById('resultCard').classList.add('show');
+    currentTab = 'minutes';
+    document.getElementById('tab-minutes').classList.add('active');
+    document.getElementById('tab-transcript').classList.remove('active');
+    document.getElementById('resultContent').textContent = minutesText;
+  } catch(e) {
+    setStatus(e.message, 'error');
+  } finally {
+    document.getElementById('runBtn').disabled = false;
+  }
+}
+</script>
+</body>
+</html>
